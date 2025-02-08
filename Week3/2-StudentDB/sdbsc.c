@@ -10,6 +10,17 @@
 #include "db.h"
 #include "sdbsc.h"
 
+// Both of these are giving me trouble apparently because I use Windows
+// #ifndef S_IRGRP
+// #define S_IRGRP  0x0020  // Group read permission
+
+// #endif
+
+// #ifndef S_IWGRP
+// #define S_IWGRP  0x0040  // Group write permission
+
+// #endif
+
 /*
  *  open_db
  *      dbFile:  name of the database file
@@ -62,8 +73,27 @@ int open_db(char *dbFile, bool should_truncate)
  */
 int get_student(int fd, int id, student_t *s)
 {
-    // TODO
-    return NOT_IMPLEMENTED_YET;
+    int bytes_read;
+    
+    // Check if the id is in between the parameters
+    if (id < MIN_STD_ID || id > MAX_STD_ID)
+        return ERR_DB_FILE;
+
+    if (lseek(fd, id * STUDENT_RECORD_SIZE, SEEK_SET) == -1) {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    }
+    bytes_read = read(fd, s, STUDENT_RECORD_SIZE);
+    if (bytes_read < 0)
+        return ERR_DB_FILE;
+    else if (bytes_read == 0) {
+        return SRCH_NOT_FOUND;
+    }
+
+    if (s->id != id)
+        return SRCH_NOT_FOUND;
+    
+    return NO_ERROR;
 }
 
 /*
@@ -77,7 +107,7 @@ int get_student(int fd, int id, student_t *s)
  *  Adds a new student to the database.  After calculating the index for the
  *  student, check if there is another student already at that location.  A good
  *  way is to use something like memcmp() to ensure that the location for this
- *  student contains all zero byes indicating the space is empty.
+ *  student contains all zero bytes indicating the space is empty.
  *
  *  returns:  NO_ERROR       student added to database
  *            ERR_DB_FILE    database file I/O issue
@@ -93,9 +123,57 @@ int get_student(int fd, int id, student_t *s)
  */
 int add_student(int fd, int id, char *fname, char *lname, int gpa)
 {
-    // TODO
-    printf(M_NOT_IMPL);
-    return NOT_IMPLEMENTED_YET;
+    student_t student;
+    int bytes_read;
+    int bytes_written;
+
+    student = EMPTY_STUDENT_RECORD;
+    if (lseek(fd, id * STUDENT_RECORD_SIZE, SEEK_SET) < 0) {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    }
+
+    bytes_read = read(fd, &student, STUDENT_RECORD_SIZE);
+    if (bytes_read == 0) {
+        student.id = id;
+        strncpy(student.fname, fname, 24);
+        strncpy(student.lname, lname, 32);
+        student.gpa = gpa;
+        if (lseek(fd, id * STUDENT_RECORD_SIZE, SEEK_SET) < 0) {
+            printf(M_ERR_DB_READ);
+            return ERR_DB_FILE;
+        }
+        bytes_written = write(fd, &student, STUDENT_RECORD_SIZE);
+        if (bytes_written != STUDENT_RECORD_SIZE) {
+            printf(M_ERR_DB_WRITE);
+            return ERR_DB_FILE;
+        } else {
+            printf(M_STD_ADDED, id);
+            return(NO_ERROR);
+        }
+    } else if (bytes_read == STUDENT_RECORD_SIZE) {
+        if (student.id == 0) {
+            student.id = id;
+            strncpy(student.fname, fname, 24);
+            strncpy(student.lname, lname, 32);
+            student.gpa = gpa;
+            lseek(fd, id * STUDENT_RECORD_SIZE, SEEK_SET);
+            bytes_written = write(fd, &student, STUDENT_RECORD_SIZE);
+            if (bytes_written != STUDENT_RECORD_SIZE) {
+                printf(M_ERR_DB_WRITE);
+                return ERR_DB_FILE;
+            } else {
+                printf(M_STD_ADDED, id);
+                return(NO_ERROR);
+            }
+        } else {
+            printf(M_ERR_DB_ADD_DUP, id);
+            return ERR_DB_OP;
+        }
+    } else {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    }
 }
 
 /*
@@ -122,9 +200,37 @@ int add_student(int fd, int id, char *fname, char *lname, int gpa)
  */
 int del_student(int fd, int id)
 {
-    // TODO
-    printf(M_NOT_IMPL);
-    return NOT_IMPLEMENTED_YET;
+    student_t temp_student;
+    int get_stud_output;
+    int bytes_written;
+
+    temp_student = EMPTY_STUDENT_RECORD;
+    get_stud_output = get_student(fd, id, &temp_student);
+    switch (get_stud_output) {
+        case NO_ERROR:
+            temp_student = EMPTY_STUDENT_RECORD;
+            if (lseek(fd, id * STUDENT_RECORD_SIZE, SEEK_SET) == -1) {
+                printf(M_ERR_DB_READ);
+                return ERR_DB_FILE;
+            }
+            bytes_written = write(fd, &temp_student, STUDENT_RECORD_SIZE);
+            if (bytes_written != STUDENT_RECORD_SIZE) {
+                printf(M_ERR_DB_READ);
+                return ERR_DB_FILE;
+            } else {
+                printf(M_STD_DEL_MSG, id);
+                return NO_ERROR;
+            }
+            break;
+        
+        case ERR_DB_FILE:
+            printf(M_ERR_DB_READ);
+            return ERR_DB_FILE;
+
+        case SRCH_NOT_FOUND:
+            printf(M_STD_NOT_FND_MSG, id);
+            return ERR_DB_OP;
+    }
 }
 
 /*
@@ -152,10 +258,38 @@ int del_student(int fd, int id)
  *
  */
 int count_db_records(int fd)
-{
-    // TODO
-    printf(M_NOT_IMPL);
-    return NOT_IMPLEMENTED_YET;
+{   
+    int records_count;
+    int bytes_read;
+    student_t temp_student;
+    student_t empty_student;
+
+    empty_student = EMPTY_STUDENT_RECORD;
+    records_count = 0;
+    if (lseek(fd, 64, SEEK_SET) == -1) {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    }
+  
+    while (1) {
+        bytes_read = read(fd, &temp_student, STUDENT_RECORD_SIZE);
+        if (bytes_read < 0) {
+            printf(M_ERR_DB_READ);
+            return ERR_DB_FILE;
+        } else if (bytes_read == 0)
+            break;
+
+        if (memcmp(&temp_student, &empty_student, STUDENT_RECORD_SIZE) != 0) 
+            records_count++;
+    }
+
+    if (records_count == 0) {
+        printf(M_DB_EMPTY);
+        return ERR_DB_OP;
+    } else {
+        printf(M_DB_RECORD_CNT, records_count);
+        return records_count;
+    }
 }
 
 /*
@@ -164,7 +298,7 @@ int count_db_records(int fd)
  *
  *  Prints all records in the database.  Start by reading the
  *  database at the beginning, and continue reading individual records
- *  until you it EOF.  EOF is when the read() syscall returns 0. Check
+ *  until you hit EOF.  EOF is when the read() syscall returns 0. Check
  *  if a slot is empty or previously deleted by investigating if all of
  *  the bytes in the record read are zeros - I would suggest using memory
  *  compare memcmp() for this. Be careful as the database might be empty.
@@ -193,9 +327,42 @@ int count_db_records(int fd)
  */
 int print_db(int fd)
 {
-    // TODO
-    printf(M_NOT_IMPL);
-    return NOT_IMPLEMENTED_YET;
+    student_t student;
+    student_t empty_student;
+    int bytes_read;
+    float calculated_gpa_from_student;
+
+    if (lseek(fd, 0, SEEK_SET) < 0) {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    }
+
+    empty_student = EMPTY_STUDENT_RECORD;
+    bytes_read = read(fd, &student, STUDENT_RECORD_SIZE);
+    if (bytes_read < 0) {
+        printf(M_ERR_DB_READ);
+        return ERR_DB_FILE;
+    } else if (bytes_read == 0) {
+        printf(M_DB_EMPTY);
+        return NO_ERROR;
+    } else {
+        printf(STUDENT_PRINT_HDR_STRING, "ID", "FIRST_NAME", "LAST_NAME", "GPA");
+        while (1) {
+            bytes_read = read(fd, &student, STUDENT_RECORD_SIZE);
+            if (bytes_read < 0) {
+                printf(M_ERR_DB_READ);
+                return ERR_DB_FILE;
+            } else if (bytes_read == 0)
+                break;
+            
+            if (memcmp(&student, &empty_student, STUDENT_RECORD_SIZE) != 0) {
+                calculated_gpa_from_student = student.gpa / 100.0;
+                printf(STUDENT_PRINT_FMT_STRING, student.id, student.fname, student.lname, calculated_gpa_from_student);
+            }
+        }
+
+        return NO_ERROR;
+    }
 }
 
 /*
@@ -228,8 +395,15 @@ int print_db(int fd)
  */
 void print_student(student_t *s)
 {
-    // TODO
-    printf(M_NOT_IMPL);
+    float print_gpa;
+
+    if (s == NULL || s->id == 0)
+        printf(M_ERR_STD_PRINT);
+    else {
+        print_gpa = s->gpa / 100.0;
+        printf(STUDENT_PRINT_HDR_STRING, "ID", "FIRST NAME", "LAST_NAME", "GPA");
+        printf(STUDENT_PRINT_FMT_STRING, s->id, s->fname, s->lname, print_gpa);
+    }
 }
 
 /*
