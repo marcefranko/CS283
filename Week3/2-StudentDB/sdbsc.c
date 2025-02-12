@@ -83,6 +83,7 @@ int get_student(int fd, int id, student_t *s)
         printf(M_ERR_DB_READ);
         return ERR_DB_FILE;
     }
+    
     bytes_read = read(fd, s, STUDENT_RECORD_SIZE);
     if (bytes_read < 0)
         return ERR_DB_FILE;
