@@ -2,9 +2,9 @@
 #define __DSHLIB_H__
 
 // Constants for command structure sizes
-#define EXE_MAX 64
-#define ARG_MAX 256
-#define CMD_MAX 8
+#define EXE_MAX 64 // Max length of execute command
+#define ARG_MAX 256 // Max length for arguments following the exe command
+#define CMD_MAX 8 // Max number of arguments
 // Longest command that can be read from the shell
 #define SH_CMD_MAX EXE_MAX + ARG_MAX
 

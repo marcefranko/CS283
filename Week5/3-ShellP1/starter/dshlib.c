@@ -34,6 +34,54 @@
  */
 int build_cmd_list(char *cmd_line, command_list_t *clist)
 {
-    printf(M_NOT_IMPL);
-    return EXIT_NOT_IMPL;
+    // check if the command is empty or if it is just a bunch of space chars
+    if (strcmp(cmd_line, "\0") == 0 || strspn(cmd_line, " ") == strlen(cmd_line))
+        return WARN_NO_CMDS;
+    
+    char *command_part;
+    char *execute; // pointer to execute command
+    char *arguments;
+    int command_length;
+    int bytes_read;
+    int command_count;
+
+    command_count = 0;
+    bytes_read = 0;
+    command_length = strlen(cmd_line);
+    // printf("command_length: %d\n", command_length); // Delete
+    command_part = strtok(cmd_line, PIPE_STRING);
+    while (command_part != NULL) {
+        if (command_count >= CMD_MAX)
+            return ERR_TOO_MANY_COMMANDS;
+
+        bytes_read += strlen(command_part) + 1;
+        // printf("bytes_read: %d\n", bytes_read); // Delete
+        execute = strtok(command_part, " ");
+        if (strlen(execute) > EXE_MAX)
+            return ERR_CMD_OR_ARGS_TOO_BIG;
+        
+        strcpy(clist->commands[command_count].exe, execute);
+        arguments = strtok(NULL, "");
+        if (arguments != NULL) {
+            if (strlen(arguments) > ARG_MAX)
+                return ERR_CMD_OR_ARGS_TOO_BIG;
+    
+            strcpy(clist->commands[command_count].args, arguments);
+        } else
+            strcpy(clist->commands[command_count].args, "\0");
+         
+        command_count++;
+        if (bytes_read < command_length) {
+            // printf("if executed: %s\n", cmd_line + bytes_read); // Delete
+            command_part = strtok(cmd_line + bytes_read, PIPE_STRING);
+        } else {
+            // printf("else executed:\n"); // Delete
+            command_part = NULL;
+        }
+
+        // printf("command_part: %s\n", command_part); // Delete
+    } 
+
+    clist->num = command_count;
+    return OK;
 }
