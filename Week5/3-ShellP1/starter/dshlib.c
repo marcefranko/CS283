@@ -54,6 +54,11 @@ int build_cmd_list(char *cmd_line, command_list_t *clist)
         if (command_count >= CMD_MAX)
             return ERR_TOO_MANY_COMMANDS;
 
+        for (int i = strlen(command_part) - 1; command_part[i] == SPACE_CHAR; i--) {
+            command_part[i + 1] = SPACE_CHAR;
+            command_part[i] = '\0'; 
+        }
+
         bytes_read += strlen(command_part) + 1;
         // printf("bytes_read: %d\n", bytes_read); // Delete
         execute = strtok(command_part, " ");
