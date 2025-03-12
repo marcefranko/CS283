@@ -108,6 +108,10 @@ int build_cmd_list(char *cmd_line, command_list_t *clist) {
 	command_count = 0;
 	command_part = strtok(cmd_line, PIPE_STRING);
 	while (command_part != NULL) {
+		if (command_count >= CMD_MAX) {
+			printf(CMD_ERR_PIPE_LIMIT, CMD_MAX);
+			return ERR_TOO_MANY_COMMANDS;
+		}
 		if (build_cmd_buff(command_part, &cmd_buff) == ERR_CMD_ARGS_BAD) {
 			fprintf(stderr, "One of the commands provided has too many arguments\n");
 			dollar_questionmark = ERR_CMD_ARGS_BAD;
