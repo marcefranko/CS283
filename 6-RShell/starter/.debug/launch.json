@@ -1,14 +1,11 @@
 {
-    "version": "0.2.0",
     "configurations": [
         {
             "name": "(gdb) 6-RShell",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/6-RShell/starter/dsh",
-            "args": [
-                ""
-            ],
+            "args": [""],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/6-RShell/starter",
             "environment": [],

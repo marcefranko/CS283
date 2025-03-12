@@ -91,7 +91,6 @@ int main()
                         
                         printf("\n");
                     }
-                    
                     break;
                 
                 case ERR_CMD_OR_ARGS_TOO_BIG:
@@ -106,7 +105,6 @@ int main()
 
        // printf("You entered: %s\n", cmd_buff); // Debugging output
     }
-
     free(cmd_buff);
 }
 
