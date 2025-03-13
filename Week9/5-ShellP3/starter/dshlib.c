@@ -38,28 +38,46 @@ int free_cmd_buff(cmd_buff_t *cmd_buff) {
 }
 
 int build_cmd_buff(char *cmd_line, cmd_buff_t *cmd_buff) {
-	int argc, char_ind;
+	int argc, char_ind, total_bytes_in_args;
 	char token[ARG_MAX], *character;
-	bool in_quote, in_char;
+	bool in_quote, in_char, in_executable;
 
     argc = 0;
     char_ind = 0;
+	total_bytes_in_args = 0;
     character = cmd_line;
     in_quote = false;
     in_char = false;
+	in_executable = true;
 	while (*character != '\0') {
+		if (in_executable) {
+			if (char_ind > EXE_MAX - 1) {
+				fprintf(stderr, "Command error: executable exceeds 64 characters\n");
+				dollar_questionmark = ERR_CMD_OR_ARGS_TOO_BIG;
+				return ERR_CMD_OR_ARGS_TOO_BIG;
+			}
+		} else {
+			if (total_bytes_in_args > ARG_MAX - 1) {
+				fprintf(stderr, "Command error: arguments exceed 256 characters\n");
+				dollar_questionmark = ERR_CMD_OR_ARGS_TOO_BIG;
+				return ERR_CMD_OR_ARGS_TOO_BIG;
+			}
+		}
 		if (in_quote) {
 			if (*character == '"') {
 				in_quote = false;
 				token[char_ind] = '\0';
 				if (char_ind > 0) {
-					if (argc >= CMD_ARGV_MAX - 1) 
+					if (argc >= CMD_ARGV_MAX - 1) {
+						fprintf(stderr, "Command error: command has too many arguments\n");
+						dollar_questionmark = ERR_CMD_ARGS_BAD;
                         return ERR_CMD_ARGS_BAD;
-
+					}
 					cmd_buff->argv[argc++] = strdup(token);
 				}
 				char_ind = 0;
 				in_char = false;
+				in_executable = false;
 			} else {
 				token[char_ind++] = *character;
 			}
@@ -70,21 +88,30 @@ int build_cmd_buff(char *cmd_line, cmd_buff_t *cmd_buff) {
 			} else if (*character == SPACE_CHAR) {
 				if (in_char) {
 					token[char_ind] = '\0';
-					if (argc >= CMD_ARGV_MAX - 1) return ERR_CMD_ARGS_BAD;
+					if (argc >= CMD_ARGV_MAX - 1) {
+						fprintf(stderr, "Command error: command has too many arguments\n");
+						dollar_questionmark = ERR_CMD_ARGS_BAD;
+                        return ERR_CMD_ARGS_BAD;
+					}
 					cmd_buff->argv[argc++] = strdup(token);
 					char_ind = 0;
 					in_char = false;
+					in_executable = false;
 				}
 			} else {
 				in_char = true;
 				token[char_ind++] = *character;
 			}
 		}
+		if (!in_executable)
+			total_bytes_in_args++;
+			
 		character++;
 	}
 	if (in_quote || in_char) {
 		token[char_ind] = '\0';
-		if (argc < CMD_ARGV_MAX - 1) cmd_buff->argv[argc++] = strdup(token);
+		if (argc < CMD_ARGV_MAX - 1) 
+			cmd_buff->argv[argc++] = strdup(token);
 	}
 	cmd_buff->argv[argc] = NULL;
 	cmd_buff->argc = argc;
@@ -93,9 +120,9 @@ int build_cmd_buff(char *cmd_line, cmd_buff_t *cmd_buff) {
 }
 
 int build_cmd_list(char *cmd_line, command_list_t *clist) {
-	// Fix this:
     if (strcmp(cmd_line, "\0") == 0 || strspn(cmd_line, " \t") == strlen(cmd_line)) {
 		printf(CMD_WARN_NO_CMD);
+		dollar_questionmark = WARN_NO_CMDS;
 		return WARN_NO_CMDS;
 	}
 	cmd_buff_t cmd_buff;
@@ -110,11 +137,11 @@ int build_cmd_list(char *cmd_line, command_list_t *clist) {
 	while (command_part != NULL) {
 		if (command_count >= CMD_MAX) {
 			printf(CMD_ERR_PIPE_LIMIT, CMD_MAX);
+			dollar_questionmark = ERR_TOO_MANY_COMMANDS;
 			return ERR_TOO_MANY_COMMANDS;
 		}
-		if (build_cmd_buff(command_part, &cmd_buff) == ERR_CMD_ARGS_BAD) {
-			fprintf(stderr, "One of the commands provided has too many arguments\n");
-			dollar_questionmark = ERR_CMD_ARGS_BAD;
+		if (build_cmd_buff(command_part, &cmd_buff) != OK) {
+			// NO $? 
 			return ERR_CMD_ARGS_BAD;
 		}
 		clist->commands[command_count] = cmd_buff;
@@ -203,6 +230,7 @@ int exec_cmd(cmd_buff_t *cmd) {
 	pid_t f_result = fork();
 	if (f_result < 0) {
 		perror("fork error");
+		dollar_questionmark = ERR_EXEC_CMD;
 		return ERR_EXEC_CMD;
 	}
 	else if (f_result == 0) {
@@ -233,6 +261,7 @@ int execute_pipeline(command_list_t *clist) {
 		for (int i = 0; i < clist->num - 1; i++) {
 			if (pipe(pipes[i]) == -1) {
 				perror("pipe");
+				dollar_questionmark = ERR_EXEC_CMD;
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -242,6 +271,7 @@ int execute_pipeline(command_list_t *clist) {
 			pids[i] = fork();
 			if (pids[i] == -1) {
 				perror("fork");
+				dollar_questionmark = ERR_EXEC_CMD;
 				exit(EXIT_FAILURE);
 			}
 
@@ -263,9 +293,16 @@ int execute_pipeline(command_list_t *clist) {
 				}
 
 				// Execute command
-				execvp(clist->commands[i].argv[0], clist->commands[i].argv);
-				perror("execvp");
-				exit(EXIT_FAILURE);
+				if (match_command(clist->commands[i].argv[0]) == BI_NOT_BI) {
+					execvp(clist->commands[i].argv[0], clist->commands[i].argv);
+					perror("execvp");
+					dollar_questionmark = ERR_EXEC_CMD;
+					exit(EXIT_FAILURE);
+				} else {
+					exec_built_in_cmd(&clist->commands[i]);
+					dollar_questionmark = OK;
+					exit(OK);
+				}
 			}
 		}
 
@@ -287,6 +324,7 @@ int execute_pipeline(command_list_t *clist) {
 
 		return rc;
 	}
+	dollar_questionmark = OK;
 	return OK;
 }
 
